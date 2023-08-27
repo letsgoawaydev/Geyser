@@ -129,20 +129,44 @@ public class CooldownUtils {
     private static String getTitle(GeyserSession session) {
         long time = System.currentTimeMillis() - session.getLastHitTime();
         double cooldown = restrain(((double) time) * session.getAttackSpeed() / 1000d, 1);
-
-        int darkGrey = (int) Math.floor(10d * cooldown);
-        int grey = 10 - darkGrey;
-        StringBuilder builder = new StringBuilder(ChatColor.DARK_GRAY);
-        while (darkGrey > 0) {
-            builder.append("˙");
-            darkGrey--;
+        int darkGrey = (int) Math.floor(16d * cooldown);
+        switch (darkGrey) {
+            case 0:
+                return "\uE1F0";
+            case 1:
+                return "\uE1F0";
+            case 2:
+                return "\uE1F1";
+            case 3:
+                return "\uE1F2";
+            case 4:
+                return "\uE1F3";
+            case 5:
+                return "\uE1F4";
+            case 6:
+                return "\uE1F5";
+            case 7:
+                return "\uE1F6";
+            case 8:
+                return "\uE1F7";
+            case 9:
+                return "\uE1F8";
+            case 10:
+                return "\uE1F9";
+            case 11:
+                return "\uE1FA";
+            case 12:
+                return "\uE1FB";
+            case 13:
+                return "\uE1FC";
+            case 14:
+                return "\uE1FD";
+            case 15:
+                return "\uE1FE";
+            case 16:
+                return "\uE1FF";
         }
-        builder.append(ChatColor.GRAY);
-        while (grey > 0) {
-            builder.append("˙");
-            grey--;
-        }
-        return builder.toString();
+        return "\uE1F0";
     }
 
     @Getter
