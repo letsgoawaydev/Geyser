@@ -294,8 +294,10 @@ public class BedrockInventoryTransactionTranslator extends PacketTranslator<Inve
                         Block place checks end - client is good to go
                          */
 
+                        BlockState blockState = session.getGeyser().getWorldManager().blockAt(session, packet.getBlockPosition());
+                        session.setLastInteractionBlock(blockState);
+                        session.getGeyser().getLogger().info(session.getLastInteractionBlock().toString());
                         if (packet.getItemInHand() != null && session.getItemMappings().getMapping(packet.getItemInHand()).getJavaItem() instanceof SpawnEggItem) {
-                            BlockState blockState = session.getGeyser().getWorldManager().blockAt(session, packet.getBlockPosition());
                             if (blockState.is(Blocks.WATER) && blockState.getValue(Properties.LEVEL) == 0) {
                                 // Otherwise causes multiple mobs to spawn - just send a use item packet
                                 useItem(session, packet, blockState.javaId());
@@ -315,7 +317,6 @@ public class BedrockInventoryTransactionTranslator extends PacketTranslator<Inve
                         Item item = session.getPlayerInventory().getItemInHand().asItem();
                         if (packet.getItemInHand() != null) {
                             ItemDefinition definition = packet.getItemInHand().getDefinition();
-                            BlockState blockState = session.getGeyser().getWorldManager().blockAt(session, packet.getBlockPosition());
                             // Otherwise boats will not be able to be placed in survival and buckets, lily pads, frogspawn, and glass bottles won't work on mobile
                             if (item instanceof BoatItem || item == Items.LILY_PAD || item == Items.FROGSPAWN) {
                                 useItem(session, packet, blockState.javaId());
