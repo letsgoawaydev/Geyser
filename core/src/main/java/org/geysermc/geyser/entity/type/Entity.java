@@ -35,12 +35,18 @@ import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityEventType;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
-import org.cloudburstmc.protocol.bedrock.packet.*;
+import org.cloudburstmc.protocol.bedrock.packet.AddEntityPacket;
+import org.cloudburstmc.protocol.bedrock.packet.EntityEventPacket;
+import org.cloudburstmc.protocol.bedrock.packet.MoveEntityAbsolutePacket;
+import org.cloudburstmc.protocol.bedrock.packet.MoveEntityDeltaPacket;
+import org.cloudburstmc.protocol.bedrock.packet.RemoveEntityPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
 import org.geysermc.geyser.api.entity.type.GeyserEntity;
 import org.geysermc.geyser.entity.EntityDefinition;
 import org.geysermc.geyser.entity.GeyserDirtyMetadata;
 import org.geysermc.geyser.entity.properties.GeyserEntityPropertyManager;
 import org.geysermc.geyser.item.Items;
+import org.geysermc.geyser.level.block.BlockStateValues;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.geyser.translator.text.MessageTranslator;
 import org.geysermc.geyser.util.EntityUtils;
@@ -55,7 +61,11 @@ import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.type.IntEnt
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.Hand;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.type.EntityType;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -285,6 +295,7 @@ public class Entity implements GeyserEntity {
 
     /**
      * Teleports an entity to a new location. Used in JavaTeleportEntityTranslator.
+     *
      * @param position The new position of the entity.
      * @param yaw The new yaw of the entity.
      * @param pitch The new pitch of the entity.
@@ -297,6 +308,7 @@ public class Entity implements GeyserEntity {
 
     /**
      * Updates an entity's head position. Used in JavaRotateHeadTranslator.
+     *
      * @param headYaw The new head rotation of the entity.
      */
     public void updateHeadLookRotation(float headYaw) {
@@ -305,6 +317,7 @@ public class Entity implements GeyserEntity {
 
     /**
      * Updates an entity's position and rotation. Used in JavaMoveEntityPosRotTranslator.
+     *
      * @param moveX The new X offset of the current position.
      * @param moveY The new Y offset of the current position.
      * @param moveZ The new Z offset of the current position.
@@ -318,6 +331,7 @@ public class Entity implements GeyserEntity {
 
     /**
      * Updates an entity's rotation. Used in JavaMoveEntityRotTranslator.
+     *
      * @param yaw The new yaw of the entity.
      * @param pitch The new pitch of the entity.
      * @param isOnGround Whether the entity is currently on the ground.
@@ -429,7 +443,7 @@ public class Entity implements GeyserEntity {
         silent = entityMetadata.getPrimitiveValue();
     }
 
-    public void setGravity(BooleanEntityMetadata entityMetadata) {
+    public void setHasGravity(BooleanEntityMetadata entityMetadata) {
         setFlag(EntityFlag.HAS_GRAVITY, !entityMetadata.getPrimitiveValue());
     }
 
@@ -543,7 +557,7 @@ public class Entity implements GeyserEntity {
      */
     public final void updateInteractiveTag() {
         InteractiveTag tag = InteractiveTag.NONE;
-        for (Hand hand: EntityUtils.HANDS) {
+        for (Hand hand : EntityUtils.HANDS) {
             tag = testInteraction(hand);
             if (tag != InteractiveTag.NONE) {
                 break;
@@ -615,6 +629,64 @@ public class Entity implements GeyserEntity {
         packet.setType(type);
         packet.setData(data);
         session.sendUpstreamPacket(packet);
+    }
+
+    public void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
+
+
+        MoveEntityDeltaPacket moveEntityDeltaPacket = new MoveEntityDeltaPacket();
+        moveEntityDeltaPacket.setRuntimeEntityId(geyserId);
+
+        if (isOnGround) {
+            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.ON_GROUND);
+        }
+        setOnGround(isOnGround);
+
+        if (teleported) {
+            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.TELEPORTING);
+        }
+
+        if (this.position.getX() != position.getX()) {
+            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_X);
+            moveEntityDeltaPacket.setX(position.getX());
+        }
+        if (this.position.getY() != position.getY()) {
+            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_Y);
+            moveEntityDeltaPacket.setY(position.getY());
+        }
+        if (this.position.getZ() != position.getZ()) {
+            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_Z);
+            moveEntityDeltaPacket.setZ(position.getZ());
+        }
+        setPosition(position);
+
+        if (getYaw() != yaw) {
+            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_YAW);
+            moveEntityDeltaPacket.setYaw(yaw);
+            setYaw(yaw);
+        }
+        if (getPitch() != pitch) {
+            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_PITCH);
+            moveEntityDeltaPacket.setPitch(pitch);
+            setPitch(pitch);
+        }
+        if (getHeadYaw() != headYaw) {
+            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_HEAD_YAW);
+            moveEntityDeltaPacket.setHeadYaw(headYaw);
+            setHeadYaw(headYaw);
+        }
+
+        if (!moveEntityDeltaPacket.getFlags().isEmpty()) {
+            session.sendUpstreamPacket(moveEntityDeltaPacket);
+        }
+    }
+
+    /**
+     * @return true if this entity is currently in water.
+     */
+    public boolean isInWater() {
+        int block = session.getGeyser().getWorldManager().getBlockAt(session, position.toInt());
+        return BlockStateValues.getWaterLevel(block) != -1;
     }
 
     @SuppressWarnings("unchecked")

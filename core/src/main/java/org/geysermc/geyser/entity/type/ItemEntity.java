@@ -111,7 +111,7 @@ public class ItemEntity extends ThrowableEntity {
     }
 
     @Override
-    protected void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
+    public void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
         float offset = definition.offset();
         if (waterLevel.join() == 0) { // Item is in a full block of water
             // Move the item entity down so it doesn't float above the water
@@ -145,7 +145,7 @@ public class ItemEntity extends ThrowableEntity {
     }
 
     @Override
-    protected boolean isInWater() {
+    public boolean isInWater() {
         return waterLevel.join() != -1;
     }
 }

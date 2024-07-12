@@ -43,6 +43,7 @@ import org.geysermc.geyser.entity.EntityDefinition;
 import org.geysermc.geyser.entity.attribute.GeyserAttributeType;
 import org.geysermc.geyser.inventory.GeyserItemStack;
 import org.geysermc.geyser.item.Items;
+import org.geysermc.geyser.level.physics.BoundingBox;
 import org.geysermc.geyser.registry.type.ItemMapping;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.geyser.translator.item.ItemTranslator;
@@ -63,11 +64,15 @@ import org.geysermc.mcprotocollib.protocol.data.game.level.particle.EntityEffect
 import org.geysermc.mcprotocollib.protocol.data.game.level.particle.Particle;
 import org.geysermc.mcprotocollib.protocol.data.game.level.particle.ParticleType;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Getter
 @Setter
-public class LivingEntity extends Entity {
+public class LivingEntity extends Entity implements Tickable {
 
     protected ItemData helmet = ItemData.AIR;
     protected ItemData chestplate = ItemData.AIR;
@@ -98,6 +103,8 @@ public class LivingEntity extends Entity {
     @Getter(AccessLevel.NONE)
     @Setter(AccessLevel.NONE)
     private float attributeScale;
+
+    private float gravity = 0.08f;
 
     public LivingEntity(GeyserSession session, int entityId, long geyserId, UUID uuid, EntityDefinition<?> definition, Vector3f position, Vector3f motion, float yaw, float pitch, float headYaw) {
         super(session, entityId, geyserId, uuid, definition, position, motion, yaw, pitch, headYaw);
@@ -138,6 +145,7 @@ public class LivingEntity extends Entity {
         // Initialize here so overriding classes don't have 0 values
         this.scale = 1f;
         this.attributeScale = 1f;
+        this.boundingBox = new BoundingBox(0, 0, 0, 0.25, 0.25, 0.25);
         super.initializeMetadata();
         // Matches Bedrock behavior; is always set to this
         dirtyMetadata.put(EntityDataTypes.STRUCTURAL_INTEGRITY, 1);
@@ -236,6 +244,18 @@ public class LivingEntity extends Entity {
         } else {
             super.setDimensions(pose);
         }
+    }
+
+    @Override
+    public boolean setBoundingBoxHeight(float height) {
+        boundingBox.setSizeY(height);
+        return super.setBoundingBoxHeight(height);
+    }
+
+    public void setBoundingBoxWidth(float width) {
+        boundingBox.setSizeX(width);
+        boundingBox.setSizeZ(width);
+        super.setBoundingBoxWidth(width);
     }
 
     @Override
@@ -411,6 +431,8 @@ public class LivingEntity extends Entity {
                     setAttributeScale((float) AttributeUtils.calculateValue(javaAttribute));
                     updateBedrockMetadata();
                 }
+                case GENERIC_GRAVITY -> setGravity((float) AttributeUtils.calculateValue(javaAttribute));
+                case GENERIC_STEP_HEIGHT -> setStepUp(AttributeUtils.calculateValue(javaAttribute));
             }
         }
     }
@@ -421,4 +443,40 @@ public class LivingEntity extends Entity {
     protected AttributeData calculateAttribute(Attribute javaAttribute, GeyserAttributeType type) {
         return type.getAttribute((float) AttributeUtils.calculateValue(javaAttribute));
     }
+
+    public BoundingBox boundingBox;
+
+    public double stepUp = 0.6f;
+
+    @Override
+    public void tick() {
+        float gravity = !isInWater() && !getFlag(EntityFlag.HAS_GRAVITY) ? getGravity() : 0.0f;
+        motion.down(gravity);
+
+        Vector3f movement = session.getCollisionManager().correctMovement(motion.toDouble(), boundingBox, isOnGround(), stepUp, true).toFloat();
+        moveAbsoluteImmediate(position.add(movement), getYaw(), getPitch(), getHeadYaw(), isOnGround(), false);
+
+        float horizontalDrag = 0.09f;
+        if (isOnGround()) {
+            horizontalDrag = 0.454f;
+        }
+        motion = motion.mul(horizontalDrag,0.02,horizontalDrag);
+    }
+
+    @Override
+    public void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
+        boundingBox.setMiddleX(position.getX());
+        boundingBox.setMiddleY(position.getY() + boundingBox.getSizeY() / 2);
+        boundingBox.setMiddleZ(position.getZ());
+        super.moveAbsoluteImmediate(position, yaw, pitch, headYaw, isOnGround, teleported);
+    }
+
+    @Override
+    public void moveAbsolute(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
+        super.moveAbsolute(position, yaw, pitch, headYaw, isOnGround, teleported);
+        boundingBox.setMiddleX(position.getX());
+        boundingBox.setMiddleY(position.getY() + boundingBox.getSizeY() / 2);
+        boundingBox.setMiddleZ(position.getZ());
+    }
+
 }

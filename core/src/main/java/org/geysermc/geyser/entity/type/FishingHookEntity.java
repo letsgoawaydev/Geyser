@@ -82,7 +82,7 @@ public class FishingHookEntity extends ThrowableEntity {
     }
 
     @Override
-    protected void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
+    public void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
         boundingBox.setMiddleX(position.getX());
         boundingBox.setMiddleY(position.getY() + boundingBox.getSizeY() / 2);
         boundingBox.setMiddleZ(position.getZ());

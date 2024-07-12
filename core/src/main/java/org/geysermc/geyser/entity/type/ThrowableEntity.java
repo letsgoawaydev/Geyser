@@ -63,55 +63,6 @@ public class ThrowableEntity extends Entity implements Tickable {
         float gravity = getGravity();
         motion = motion.mul(drag).down(gravity);
     }
-
-    protected void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
-        MoveEntityDeltaPacket moveEntityDeltaPacket = new MoveEntityDeltaPacket();
-        moveEntityDeltaPacket.setRuntimeEntityId(geyserId);
-
-        if (isOnGround) {
-            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.ON_GROUND);
-        }
-        setOnGround(isOnGround);
-
-        if (teleported) {
-            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.TELEPORTING);
-        }
-
-        if (this.position.getX() != position.getX()) {
-            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_X);
-            moveEntityDeltaPacket.setX(position.getX());
-        }
-        if (this.position.getY() != position.getY()) {
-            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_Y);
-            moveEntityDeltaPacket.setY(position.getY());
-        }
-        if (this.position.getZ() != position.getZ()) {
-            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_Z);
-            moveEntityDeltaPacket.setZ(position.getZ());
-        }
-        setPosition(position);
-
-        if (getYaw() != yaw) {
-            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_YAW);
-            moveEntityDeltaPacket.setYaw(yaw);
-            setYaw(yaw);
-        }
-        if (getPitch() != pitch) {
-            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_PITCH);
-            moveEntityDeltaPacket.setPitch(pitch);
-            setPitch(pitch);
-        }
-        if (getHeadYaw() != headYaw) {
-            moveEntityDeltaPacket.getFlags().add(MoveEntityDeltaPacket.Flag.HAS_HEAD_YAW);
-            moveEntityDeltaPacket.setHeadYaw(headYaw);
-            setHeadYaw(headYaw);
-        }
-
-        if (!moveEntityDeltaPacket.getFlags().isEmpty()) {
-            session.sendUpstreamPacket(moveEntityDeltaPacket);
-        }
-    }
-
     /**
      * Get the gravity of this entity type. Used for applying gravity while the entity is in motion.
      *
@@ -163,15 +114,6 @@ public class ThrowableEntity extends Entity implements Tickable {
         }
         return 1;
     }
-
-    /**
-     * @return true if this entity is currently in water.
-     */
-    protected boolean isInWater() {
-        int block = session.getGeyser().getWorldManager().getBlockAt(session, position.toInt());
-        return BlockStateValues.getWaterLevel(block) != -1;
-    }
-
     @Override
     public void despawnEntity() {
         if (definition.entityType() == EntityType.ENDER_PEARL) {

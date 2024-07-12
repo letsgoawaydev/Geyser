@@ -58,7 +58,7 @@ public class FireballEntity extends ThrowableEntity {
     }
 
     @Override
-    protected void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
+    public void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
         // Advance the position by a few ticks before sending it to Bedrock
         Vector3f lastMotion = motion;
         Vector3f newPosition = position;

@@ -198,7 +198,7 @@ public final class EntityDefinitions {
                 .addTranslator(MetadataType.OPTIONAL_CHAT, Entity::setDisplayName)
                 .addTranslator(MetadataType.BOOLEAN, Entity::setDisplayNameVisible)
                 .addTranslator(MetadataType.BOOLEAN, Entity::setSilent)
-                .addTranslator(MetadataType.BOOLEAN, Entity::setGravity)
+                .addTranslator(MetadataType.BOOLEAN, Entity::setHasGravity)
                 .addTranslator(MetadataType.POSE, (entity, entityMetadata) -> entity.setPose(entityMetadata.getValue()))
                 .addTranslator(MetadataType.INT, Entity::setFreezing)
                 .build();
