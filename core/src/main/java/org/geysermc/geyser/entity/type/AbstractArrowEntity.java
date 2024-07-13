@@ -25,24 +25,32 @@
 
 package org.geysermc.geyser.entity.type;
 
-import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.type.ByteEntityMetadata;
-import org.geysermc.mcprotocollib.protocol.data.game.entity.type.EntityType;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
 import org.geysermc.geyser.entity.EntityDefinition;
+import org.geysermc.geyser.level.physics.BoundingBox;
 import org.geysermc.geyser.session.GeyserSession;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.type.ByteEntityMetadata;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.type.EntityType;
 
 import java.util.UUID;
 
-public class AbstractArrowEntity extends Entity {
+public class AbstractArrowEntity extends Entity implements Tickable {
 
     public AbstractArrowEntity(GeyserSession session, int entityId, long geyserId, UUID uuid, EntityDefinition<?> definition, Vector3f position, Vector3f motion, float yaw, float pitch, float headYaw) {
+
         super(session, entityId, geyserId, uuid, definition, position, motion, yaw, pitch, headYaw);
 
         // Set the correct texture if using the resource pack
         setFlag(EntityFlag.BRIBED, definition.entityType() == EntityType.SPECTRAL_ARROW);
 
         setMotion(motion);
+    }
+
+    @Override
+    protected void initializeMetadata() {
+        this.boundingBox = new BoundingBox(0, 0, 0, 0.25, 0.25, 0.25);
+        super.initializeMetadata();
     }
 
     public void setArrowFlags(ByteEntityMetadata entityMetadata) {
@@ -73,5 +81,62 @@ public class AbstractArrowEntity extends Entity {
         setYaw((float) Math.toDegrees(Math.atan2(motion.getX(), motion.getZ())));
         setPitch((float) Math.toDegrees(Math.atan2(motion.getY(), horizontalSpeed)));
         setHeadYaw(getYaw());
+    }
+
+    @Override
+    public boolean setBoundingBoxHeight(float height) {
+        boundingBox.setSizeY(height);
+        return super.setBoundingBoxHeight(height);
+    }
+
+    public void setBoundingBoxWidth(float width) {
+        boundingBox.setSizeX(width);
+        boundingBox.setSizeZ(width);
+        super.setBoundingBoxWidth(width);
+    }
+
+    public BoundingBox boundingBox;
+
+    public double stepUp = 0.6f;
+
+    @Override
+    public void tick() {
+        float gravity = !isInWater() && !getFlag(EntityFlag.HAS_GRAVITY) ? 0.08f : 0.0f;
+        Vector3f originalMovement = motion;
+        Vector3f movement = session.getCollisionManager().correctMovement(originalMovement.toDouble(), boundingBox, isOnGround(), stepUp, true).toFloat();
+        if (position.add(originalMovement).distance(position.add(movement)) < 0.0001) {
+            setMotion(movement.clone());
+            moveAbsoluteImmediate(lastServerPosition, getYaw(), getPitch(), getHeadYaw(), isOnGround(), false);
+        } else {
+            moveAbsoluteImmediate(position.add(movement), getYaw(), getPitch(), getHeadYaw(), isOnGround(), false);
+        }
+        motion = motion.mul(0.02).down(gravity);
+    }
+
+    @Override
+    public void moveAbsoluteImmediate(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
+        boundingBox.setMiddleX(position.getX());
+        boundingBox.setMiddleY(position.getY() + boundingBox.getSizeY() / 2);
+        boundingBox.setMiddleZ(position.getZ());
+        super.moveAbsoluteImmediate(position, yaw, pitch, headYaw, isOnGround, teleported);
+    }
+
+    Vector3f lastServerPosition = Vector3f.ZERO;
+
+    @Override
+    public void moveAbsolute(Vector3f position, float yaw, float pitch, float headYaw, boolean isOnGround, boolean teleported) {
+        lastServerPosition = position.clone();
+        super.moveAbsolute(position, yaw, pitch, headYaw, isOnGround, teleported);
+        boundingBox.setMiddleX(position.getX());
+        boundingBox.setMiddleY(position.getY() + boundingBox.getSizeY() / 2);
+        boundingBox.setMiddleZ(position.getZ());
+    }
+    @Override
+    public void moveRelative(double relX, double relY, double relZ, float yaw, float pitch, float headYaw, boolean isOnGround) {
+        super.moveRelative(relX,relY,relZ, yaw, pitch, headYaw, isOnGround);
+        lastServerPosition = position.clone();
+        boundingBox.setMiddleX(position.getX());
+        boundingBox.setMiddleY(position.getY() + boundingBox.getSizeY() / 2);
+        boundingBox.setMiddleZ(position.getZ());
     }
 }
