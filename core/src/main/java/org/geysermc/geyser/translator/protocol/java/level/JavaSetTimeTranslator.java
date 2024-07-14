@@ -25,11 +25,11 @@
 
 package org.geysermc.geyser.translator.protocol.java.level;
 
-import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSetTimePacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetTimePacket;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.geyser.translator.protocol.PacketTranslator;
 import org.geysermc.geyser.translator.protocol.Translator;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSetTimePacket;
 
 @Translator(packet = ClientboundSetTimePacket.class)
 public class JavaSetTimeTranslator extends PacketTranslator<ClientboundSetTimePacket> {
@@ -43,9 +43,15 @@ public class JavaSetTimeTranslator extends PacketTranslator<ClientboundSetTimePa
         // https://minecraft.wiki/w/Day-night_cycle#24-hour_Minecraft_day
         SetTimePacket setTimePacket = new SetTimePacket();
         // We use modulus to prevent an integer overflow
-        // 24000 is the range of ticks that a Minecraft day can be; we times by 8 so all moon phases are visible
-        // (Last verified behavior: Bedrock 1.18.12 / Java 1.18.2)
-        setTimePacket.setTime((int) (Math.abs(time) % (24000 * 8)));
+        // 24000 is the range of ticks that a Minecraft day can be, meaning we need
+        // a number divisible by 8 so all moon phases are visible
+        // 89478 (2147472000 ticks) is the maximum amount of days that fit into the integer limit (2147483647)
+        // But it isn't a multiple of 8, so the closest number we can use is 89472
+        // This means that the moon cycle will remain consistent,
+        // with the maximum amount of days that can show on the Day Counter is 89472
+        // until it wraps around to 0 again.
+        // (Last verified behavior: Bedrock 1.21.2 / Java 1.21)
+        setTimePacket.setTime((int) (Math.abs(time) % (24000 * 89472)));
         session.sendUpstreamPacket(setTimePacket);
         if (!session.isDaylightCycle() && time >= 0) {
             // Client thinks there is no daylight cycle but there is

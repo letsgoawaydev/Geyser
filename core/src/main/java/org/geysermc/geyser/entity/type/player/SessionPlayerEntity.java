@@ -37,8 +37,8 @@ import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
 import org.geysermc.geyser.entity.attribute.GeyserAttributeType;
 import org.geysermc.geyser.item.Items;
-import org.geysermc.geyser.network.GameProtocol;
 import org.geysermc.geyser.level.BedrockDimension;
+import org.geysermc.geyser.network.GameProtocol;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.geyser.util.AttributeUtils;
 import org.geysermc.geyser.util.DimensionUtils;
@@ -78,12 +78,12 @@ public class SessionPlayerEntity extends PlayerEntity {
      * <p>
      * Must be reset when dying, switching worlds, or being teleported out of the void
      */
-    @Getter @Setter
+    @Getter
+    @Setter
     private boolean voidPositionDesynched;
 
     public SessionPlayerEntity(GeyserSession session) {
         super(session, -1, 1, null, Vector3f.ZERO, Vector3f.ZERO, 0, 0, 0, null, null);
-
         valid = true;
     }
 
@@ -322,7 +322,7 @@ public class SessionPlayerEntity extends PlayerEntity {
      * The Java server should never see this desync as we adjust the position that we send to it
      *
      * @param up in which direction to teleport - true to resync our position, or false to be
-     *           teleported below the void floor.
+     * teleported below the void floor.
      */
     public void teleportVoidFloorFix(boolean up) {
         // Safety to avoid double teleports

@@ -670,6 +670,8 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         gamerulePacket.getGameRules().add(new GameRuleData<>("spawnradius", 0));
         // Recipe unlocking
         gamerulePacket.getGameRules().add(new GameRuleData<>("recipesunlock", true));
+
+        gamerulePacket.getGameRules().add(new GameRuleData<>("showdaysplayed", true));
         upstream.sendPacket(gamerulePacket);
     }
 
@@ -1472,6 +1474,7 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         startGamePacket.setUniqueEntityId(playerEntity.getGeyserId());
         startGamePacket.setRuntimeEntityId(playerEntity.getGeyserId());
         startGamePacket.setPlayerGameType(EntityUtils.toBedrockGamemode(gameMode));
+        startGamePacket.setHardcore(false);
         startGamePacket.setPlayerPosition(Vector3f.from(0, 69, 0));
         startGamePacket.setRotation(Vector2f.from(1, 1));
 
@@ -1541,7 +1544,6 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         startGamePacket.setWorldTemplateId(UUID.randomUUID());
 
         startGamePacket.setChatRestrictionLevel(ChatRestrictionLevel.NONE);
-
         startGamePacket.setAuthoritativeMovementMode(AuthoritativeMovementMode.CLIENT);
         startGamePacket.setRewindHistorySize(0);
         startGamePacket.setServerAuthoritativeBlockBreaking(false);
@@ -1551,6 +1553,7 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         startGamePacket.setScenarioId("");
 
         upstream.sendPacket(startGamePacket);
+        getGeyser().getLogger().debug("StartGamePacket sent to " + bedrockUsername());
     }
 
     private void syncEntityProperties() {

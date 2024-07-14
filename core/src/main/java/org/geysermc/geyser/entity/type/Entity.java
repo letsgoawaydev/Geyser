@@ -344,7 +344,6 @@ public class Entity implements GeyserEntity {
         if (!valid) {
             return;
         }
-
         if (dirtyMetadata.hasEntries() || flagsDirty) {
             SetEntityDataPacket entityDataPacket = new SetEntityDataPacket();
             entityDataPacket.setRuntimeEntityId(geyserId);
