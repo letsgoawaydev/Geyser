@@ -48,6 +48,8 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.common.value.qual.IntRange;
 import org.cloudburstmc.math.vector.*;
 import org.cloudburstmc.nbt.NbtMap;
+import org.cloudburstmc.netty.channel.raknet.RakChildChannel;
+import org.cloudburstmc.netty.handler.codec.raknet.common.RakSessionCodec;
 import org.cloudburstmc.protocol.bedrock.BedrockDisconnectReasons;
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
 import org.cloudburstmc.protocol.bedrock.data.*;
@@ -69,6 +71,7 @@ import org.geysermc.geyser.Constants;
 import org.geysermc.geyser.GeyserImpl;
 import org.geysermc.geyser.api.bedrock.camera.CameraData;
 import org.geysermc.geyser.api.bedrock.camera.CameraShake;
+import org.geysermc.geyser.api.bedrock.gui.GuiData;
 import org.geysermc.geyser.api.connection.GeyserConnection;
 import org.geysermc.geyser.api.entity.EntityData;
 import org.geysermc.geyser.api.entity.type.GeyserEntity;
@@ -92,6 +95,7 @@ import org.geysermc.geyser.erosion.AbstractGeyserboundPacketHandler;
 import org.geysermc.geyser.erosion.GeyserboundHandshakePacketHandler;
 import org.geysermc.geyser.impl.camera.CameraDefinitions;
 import org.geysermc.geyser.impl.camera.GeyserCameraData;
+import org.geysermc.geyser.impl.gui.GeyserGuiData;
 import org.geysermc.geyser.inventory.Inventory;
 import org.geysermc.geyser.inventory.PlayerInventory;
 import org.geysermc.geyser.inventory.recipe.GeyserRecipe;
@@ -555,6 +559,9 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
 
     private final GeyserCameraData cameraData;
 
+    private final GeyserGuiData guiData;
+
+
     private final GeyserEntityData entityData;
 
     private MinecraftProtocol protocol;
@@ -580,8 +587,10 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         this.structureBlockCache = new StructureBlockCache();
         this.tagCache = new TagCache();
         this.worldCache = new WorldCache(this);
+
         this.cameraData = new GeyserCameraData(this);
         this.entityData = new GeyserEntityData(this);
+        this.guiData = new GeyserGuiData(this);
 
         this.worldBorder = new WorldBorder(this);
 
@@ -1308,7 +1317,7 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     public void setGameMode(GameMode newGamemode) {
         boolean currentlySpectator = this.gameMode == GameMode.SPECTATOR;
         this.gameMode = newGamemode;
-        this.cameraData.handleGameModeChange(currentlySpectator, newGamemode);
+        this.guiData.handleGameModeChange(currentlySpectator, newGamemode);
     }
 
     /**
@@ -1403,8 +1412,25 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     }
 
     @Override
+    public UUID playerUuid() {
+        return javaUuid(); // CommandSource allows nullable
+    }
+
+    @Override
+    public GeyserSession connection() {
+        return this;
+    }
+
+    @Override
     public String locale() {
         return clientData.getLanguageCode();
+    }
+
+    @Override
+    public boolean hasPermission(String permission) {
+        // for Geyser-Standalone, standalone's permission system will handle it.
+        // for server platforms, the session will be mapped to a server command sender, and the server's api will be used.
+        return geyser.commandRegistry().hasPermission(this, permission);
     }
 
     /**
@@ -1719,17 +1745,6 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         upstream.sendPacket(gameRulesChangedPacket);
     }
 
-    /**
-     * Checks if the given session's player has a permission
-     *
-     * @param permission The permission node to check
-     * @return true if the player has the requested permission, false if not
-     */
-    @Override
-    public boolean hasPermission(String permission) {
-        return geyser.getWorldManager().hasPermission(this, permission);
-    }
-
     private static final Ability[] USED_ABILITIES = Ability.values();
 
     /**
@@ -2016,6 +2031,11 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     }
 
     @Override
+    public @NonNull GuiData gui() {
+        return this.guiData;
+    }
+
+    @Override
     public void shakeCamera(float intensity, float duration, @NonNull CameraShake type) {
         this.cameraData.shakeCamera(intensity, duration, type);
     }
@@ -2038,6 +2058,12 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     @Override
     public @NonNull Set<String> fogEffects() {
         return this.cameraData.fogEffects();
+    }
+
+    @Override
+    public int ping() {
+        RakSessionCodec rakSessionCodec = ((RakChildChannel) getUpstream().getSession().getPeer().getChannel()).rakPipeline().get(RakSessionCodec.class);
+        return (int) Math.floor(rakSessionCodec.getPing());
     }
 
     public void addCommandEnum(String name, String enums) {
