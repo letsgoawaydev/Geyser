@@ -25,9 +25,9 @@
 
 package org.geysermc.geyser.translator.protocol.java.inventory;
 
-import com.github.steveice10.mc.protocol.data.game.inventory.ContainerType;
-import com.github.steveice10.mc.protocol.packet.ingame.clientbound.inventory.ClientboundOpenScreenPacket;
-import com.github.steveice10.mc.protocol.packet.ingame.serverbound.inventory.ServerboundContainerClosePacket;
+import org.geysermc.mcprotocollib.protocol.data.game.inventory.ContainerType;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundOpenScreenPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundContainerClosePacket;
 import net.kyori.adventure.text.Component;
 import org.geysermc.geyser.inventory.Inventory;
 import org.geysermc.geyser.session.GeyserSession;
@@ -49,12 +49,14 @@ public class JavaOpenScreenTranslator extends PacketTranslator<ClientboundOpenSc
             return;
         }
 
-        InventoryTranslator newTranslator = InventoryTranslator.inventoryTranslator(packet.getType());
+        InventoryTranslator newTranslator;
         Inventory openInventory = session.getOpenInventory();
 
         // Hack: ViaVersion translates the old (pre 1.20) smithing table to a furnace (does not work for Bedrock). We can detect this and translate it back to a smithing table.
         if (session.isOldSmithingTable() && packet.getType() == ContainerType.FURNACE && packet.getTitle().equals(SMITHING_TABLE_COMPONENT)) {
             newTranslator = OldSmithingTableTranslator.INSTANCE;
+        } else {
+            newTranslator = InventoryTranslator.inventoryTranslator(packet.getType());
         }
 
         // No translator exists for this window type. Close all windows and return.
@@ -63,7 +65,7 @@ public class JavaOpenScreenTranslator extends PacketTranslator<ClientboundOpenSc
                 InventoryUtils.closeInventory(session, openInventory.getJavaId(), true);
             }
             ServerboundContainerClosePacket closeWindowPacket = new ServerboundContainerClosePacket(packet.getContainerId());
-            session.sendDownstreamPacket(closeWindowPacket);
+            session.sendDownstreamGamePacket(closeWindowPacket);
             return;
         }
 
@@ -73,7 +75,8 @@ public class JavaOpenScreenTranslator extends PacketTranslator<ClientboundOpenSc
         if (openInventory != null) {
             // If the window type is the same, don't close.
             // In rare cases, inventories can do funny things where it keeps the same window type up but change the contents.
-            if (openInventory.getContainerType() != packet.getType()) {
+            // Or, inventory names can change (useful for JsonUI). In these cases, we need to close the old inventory.
+            if (openInventory.getContainerType() != packet.getType() || !openInventory.getTitle().equals(name)) {
                 // Sometimes the server can double-open an inventory with the same ID - don't confirm in that instance.
                 InventoryUtils.closeInventory(session, openInventory.getJavaId(), openInventory.getJavaId() != packet.getContainerId());
             }

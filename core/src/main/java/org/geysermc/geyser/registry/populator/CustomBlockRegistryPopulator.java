@@ -1,3 +1,28 @@
+/*
+ * Copyright (c) 2019-2024 GeyserMC. http://geysermc.org
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ * @author GeyserMC
+ * @link https://github.com/GeyserMC/Geyser
+ */
+
 package org.geysermc.geyser.registry.populator;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -23,17 +48,18 @@ import org.geysermc.geyser.api.block.custom.property.CustomBlockProperty;
 import org.geysermc.geyser.api.block.custom.property.PropertyType;
 import org.geysermc.geyser.api.event.lifecycle.GeyserDefineCustomBlocksEvent;
 import org.geysermc.geyser.api.util.CreativeCategory;
+import org.geysermc.geyser.level.block.GeyserCustomBlockComponents;
+import org.geysermc.geyser.level.block.GeyserCustomBlockData;
 import org.geysermc.geyser.level.block.GeyserCustomBlockState;
-import org.geysermc.geyser.level.block.GeyserCustomBlockComponents.CustomBlockComponentsBuilder;
-import org.geysermc.geyser.level.block.GeyserCustomBlockData.CustomBlockDataBuilder;
-import org.geysermc.geyser.level.block.GeyserGeometryComponent.GeometryComponentBuilder;
-import org.geysermc.geyser.level.block.GeyserMaterialInstance.MaterialInstanceBuilder;
+import org.geysermc.geyser.level.block.GeyserGeometryComponent;
+import org.geysermc.geyser.level.block.GeyserMaterialInstance;
 import org.geysermc.geyser.registry.BlockRegistries;
 import org.geysermc.geyser.registry.mappings.MappingsConfigReader;
 import org.geysermc.geyser.registry.type.CustomSkull;
 import org.geysermc.geyser.util.MathUtils;
 
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,6 +67,13 @@ import java.util.Map;
 import java.util.Set;
 
 public class CustomBlockRegistryPopulator {
+
+    // Since 1.20.60, custom blocks need a block_id in their nbt tag
+    public static AtomicInteger BLOCK_ID = new AtomicInteger();
+
+    // Custom block id's start at 10000, and count up
+    public static final int START_OFFSET = 10000;
+
     /**
      * The stage of population
      */
@@ -48,7 +81,7 @@ public class CustomBlockRegistryPopulator {
         DEFINITION,
         VANILLA_REGISTRATION,
         NON_VANILLA_REGISTRATION,
-        CUSTOM_REGISTRATION;
+        CUSTOM_REGISTRATION
     }
 
     /**
@@ -62,75 +95,67 @@ public class CustomBlockRegistryPopulator {
         }
         
         switch (stage) {
-            case DEFINITION -> { populateBedrock(); }
-            case VANILLA_REGISTRATION -> { populateVanilla(); }
-            case NON_VANILLA_REGISTRATION -> { populateNonVanilla(); }
-            case CUSTOM_REGISTRATION -> { registration(); }
-            default -> { throw new IllegalArgumentException("Unknown stage: " + stage); }
+            case DEFINITION -> populateBedrock();
+            case VANILLA_REGISTRATION -> populateVanilla();
+            case NON_VANILLA_REGISTRATION -> populateNonVanilla();
+            case CUSTOM_REGISTRATION -> registration();
+            default -> throw new IllegalArgumentException("Unknown stage: " + stage);
         }
     }
 
-    private static Set<CustomBlockData> customBlocks;
-    private static Set<String> customBlockNames;
-    private static Int2ObjectMap<CustomBlockState> blockStateOverrides;
-    private static Map<String, CustomBlockData> customBlockItemOverrides;
-    private static Map<JavaBlockState, CustomBlockState> nonVanillaBlockStateOverrides;
+    private static Set<CustomBlockData> CUSTOM_BLOCKS;
+    private static Map<String, CustomBlockData> CUSTOM_BLOCK_ITEM_OVERRIDES;
+    private static Map<JavaBlockState, CustomBlockState> NON_VANILLA_BLOCK_STATE_OVERRIDES;
+    private static Map<String, CustomBlockState> BLOCK_STATE_OVERRIDES_QUEUE;
 
     /**
      * Initializes custom blocks defined by API
      */
     private static void populateBedrock() {
-        customBlocks = new ObjectOpenHashSet<>();
-        customBlockNames = new ObjectOpenHashSet<>();
-        blockStateOverrides = new Int2ObjectOpenHashMap<>();
-        customBlockItemOverrides = new HashMap<>();
-        nonVanillaBlockStateOverrides = new HashMap<>();
+        CUSTOM_BLOCKS = new ObjectOpenHashSet<>();
+        CUSTOM_BLOCK_ITEM_OVERRIDES = new HashMap<>();
+        NON_VANILLA_BLOCK_STATE_OVERRIDES = new HashMap<>();
+        BLOCK_STATE_OVERRIDES_QUEUE = new HashMap<>();
 
+        Set<String> customBlockIdentifiers = new ObjectOpenHashSet<>();
         GeyserImpl.getInstance().getEventBus().fire(new GeyserDefineCustomBlocksEvent() {
             @Override
             public void register(@NonNull CustomBlockData customBlockData) {
-                if (customBlockData.name().length() == 0) {
+                if (customBlockData.name().isEmpty()) {
                     throw new IllegalArgumentException("Custom block name must have at least 1 character.");
                 }
-                if (!customBlockNames.add(customBlockData.name())) {
-                    throw new IllegalArgumentException("Another custom block was already registered under the name: " + customBlockData.name());
+                if (!customBlockIdentifiers.add(customBlockData.identifier())) {
+                    throw new IllegalArgumentException("Another custom block was already registered under the identifier: " + customBlockData.identifier());
                 }
                 if (Character.isDigit(customBlockData.name().charAt(0))) {
                     throw new IllegalArgumentException("Custom block can not start with a digit. Name: " + customBlockData.name());
                 }
-                customBlocks.add(customBlockData);
+                CUSTOM_BLOCKS.add(customBlockData);
             }
 
             @Override
             public void registerOverride(@NonNull String javaIdentifier, @NonNull CustomBlockState customBlockState) {
-                int id = BlockRegistries.JAVA_IDENTIFIER_TO_ID.getOrDefault(javaIdentifier, -1);
-                if (id == -1) {
-                    throw new IllegalArgumentException("Unknown Java block state. Identifier: " + javaIdentifier);
-                }
-                if (!customBlocks.contains(customBlockState.block())) {
+                if (!CUSTOM_BLOCKS.contains(customBlockState.block())) {
                     throw new IllegalArgumentException("Custom block is unregistered. Name: " + customBlockState.name());
                 }
-                CustomBlockState oldBlockState = blockStateOverrides.put(id, customBlockState);
-                if (oldBlockState != null) {
-                    GeyserImpl.getInstance().getLogger().debug("Duplicate block state override for Java Identifier: " +
-                            javaIdentifier + " Old override: " + oldBlockState.name() + " New override: " + customBlockState.name());
-                }
+                // We can't register these yet as we don't have the java block id registry populated
+                BLOCK_STATE_OVERRIDES_QUEUE.put(javaIdentifier, customBlockState);
             }
 
             @Override
             public void registerItemOverride(@NonNull String javaIdentifier, @NonNull CustomBlockData customBlockData) {
-                if (!customBlocks.contains(customBlockData)) {
+                if (!CUSTOM_BLOCKS.contains(customBlockData)) {
                     throw new IllegalArgumentException("Custom block is unregistered. Name: " + customBlockData.name());
                 }
-                customBlockItemOverrides.put(javaIdentifier, customBlockData);
+                CUSTOM_BLOCK_ITEM_OVERRIDES.put(javaIdentifier, customBlockData);
             }
 
             @Override
             public void registerOverride(@NonNull JavaBlockState javaBlockState, @NonNull CustomBlockState customBlockState) {
-                if (!customBlocks.contains(customBlockState.block())) {
+                if (!CUSTOM_BLOCKS.contains(customBlockState.block())) {
                     throw new IllegalArgumentException("Custom block is unregistered. Name: " + customBlockState.name());
                 }
-                nonVanillaBlockStateOverrides.put(javaBlockState, customBlockState);
+                NON_VANILLA_BLOCK_STATE_OVERRIDES.put(javaBlockState, customBlockState);
             }
         });
     }
@@ -139,17 +164,35 @@ public class CustomBlockRegistryPopulator {
      * Registers all vanilla custom blocks and skulls defined by API and mappings
      */
     private static void populateVanilla() {
+        Int2ObjectMap<CustomBlockState> blockStateOverrides = new Int2ObjectOpenHashMap<>();
+
         for (CustomSkull customSkull : BlockRegistries.CUSTOM_SKULLS.get().values()) {
-            customBlocks.add(customSkull.getCustomBlockData());
+            CUSTOM_BLOCKS.add(customSkull.getCustomBlockData());
         }
+
+        for(Map.Entry<String, CustomBlockState> entry : BLOCK_STATE_OVERRIDES_QUEUE.entrySet()) {
+            int id = BlockRegistries.JAVA_IDENTIFIER_TO_ID.getOrDefault(entry.getKey(), -1);
+            if (id == -1) {
+                GeyserImpl.getInstance().getLogger().warning("Custom block state override for Java Identifier: " +
+                        entry.getKey() + " could not be registered as it is not a valid block state.");
+                continue;
+            }
+
+            CustomBlockState oldBlockState = blockStateOverrides.put(id, entry.getValue());
+            if (oldBlockState != null) {
+                GeyserImpl.getInstance().getLogger().warning("Duplicate block state override for Java Identifier: " +
+                        entry.getKey() + " Old override: " + oldBlockState.name() + " New override: " + entry.getValue().name());
+            }
+        }
+        BLOCK_STATE_OVERRIDES_QUEUE = null;
 
         Map<CustomBlockData, Set<Integer>> extendedCollisionBoxes = new HashMap<>();
         Map<BoxComponent, CustomBlockData> extendedCollisionBoxSet = new HashMap<>();
         MappingsConfigReader mappingsConfigReader = new MappingsConfigReader();
         mappingsConfigReader.loadBlockMappingsFromJson((key, block) -> {
-            customBlocks.add(block.data());
+            CUSTOM_BLOCKS.add(block.data());
             if (block.overrideItem()) {
-                customBlockItemOverrides.put(block.javaIdentifier(), block.data());
+                CUSTOM_BLOCK_ITEM_OVERRIDES.put(block.javaIdentifier(), block.data());
             }
             block.states().forEach((javaIdentifier, customBlockState) -> {
                 int id = BlockRegistries.JAVA_IDENTIFIER_TO_ID.getOrDefault(javaIdentifier, -1);
@@ -158,7 +201,7 @@ public class CustomBlockRegistryPopulator {
                 if (extendedCollisionBox != null) {
                     CustomBlockData extendedCollisionBlock = extendedCollisionBoxSet.computeIfAbsent(extendedCollisionBox, box -> {
                         CustomBlockData collisionBlock = createExtendedCollisionBlock(box, extendedCollisionBoxSet.size());
-                        customBlocks.add(collisionBlock);
+                        CUSTOM_BLOCKS.add(collisionBlock);
                         return collisionBlock;
                     });
                     extendedCollisionBoxes.computeIfAbsent(extendedCollisionBlock, k -> new HashSet<>())
@@ -168,29 +211,39 @@ public class CustomBlockRegistryPopulator {
         });
     
         BlockRegistries.CUSTOM_BLOCK_STATE_OVERRIDES.set(blockStateOverrides);
-        GeyserImpl.getInstance().getLogger().info("Registered " + blockStateOverrides.size() + " custom block overrides.");
+        if (!blockStateOverrides.isEmpty()) {
+            GeyserImpl.getInstance().getLogger().info("Registered " + blockStateOverrides.size() + " custom block overrides.");
+        }
 
-        BlockRegistries.CUSTOM_BLOCK_ITEM_OVERRIDES.set(customBlockItemOverrides);
-        GeyserImpl.getInstance().getLogger().info("Registered " + customBlockItemOverrides.size() + " custom block item overrides.");
+        BlockRegistries.CUSTOM_BLOCK_ITEM_OVERRIDES.set(CUSTOM_BLOCK_ITEM_OVERRIDES);
+        if (!CUSTOM_BLOCK_ITEM_OVERRIDES.isEmpty()) {
+            GeyserImpl.getInstance().getLogger().info("Registered " + CUSTOM_BLOCK_ITEM_OVERRIDES.size() + " custom block item overrides.");
+        }
 
         BlockRegistries.EXTENDED_COLLISION_BOXES.set(extendedCollisionBoxes);
-        GeyserImpl.getInstance().getLogger().info("Registered " + extendedCollisionBoxes.size() + " custom block extended collision boxes.");
+        if (!extendedCollisionBoxes.isEmpty()) {
+            GeyserImpl.getInstance().getLogger().info("Registered " + extendedCollisionBoxes.size() + " custom block extended collision boxes.");
+        }
     }
 
     /**
      * Registers all non-vanilla custom blocks defined by API
      */
     private static void populateNonVanilla() {
-        BlockRegistries.NON_VANILLA_BLOCK_STATE_OVERRIDES.set(nonVanillaBlockStateOverrides);
-        GeyserImpl.getInstance().getLogger().info("Registered " + nonVanillaBlockStateOverrides.size() + " non-vanilla block overrides.");
+        BlockRegistries.NON_VANILLA_BLOCK_STATE_OVERRIDES.set(NON_VANILLA_BLOCK_STATE_OVERRIDES);
+        if (!NON_VANILLA_BLOCK_STATE_OVERRIDES.isEmpty()) {
+            GeyserImpl.getInstance().getLogger().info("Registered " + NON_VANILLA_BLOCK_STATE_OVERRIDES.size() + " non-vanilla block overrides.");
+        }
     }
 
     /**
      * Registers all bedrock custom blocks defined in previous stages
      */
     private static void registration() {
-        BlockRegistries.CUSTOM_BLOCKS.set(customBlocks.toArray(new CustomBlockData[0]));
-        GeyserImpl.getInstance().getLogger().info("Registered " + customBlocks.size() + " custom blocks.");
+        BlockRegistries.CUSTOM_BLOCKS.set(CUSTOM_BLOCKS.toArray(new CustomBlockData[0]));
+        if (!CUSTOM_BLOCKS.isEmpty()) {
+            GeyserImpl.getInstance().getLogger().info("Registered " + CUSTOM_BLOCKS.size() + " custom blocks.");
+        }
     }
 
     /**
@@ -199,10 +252,9 @@ public class CustomBlockRegistryPopulator {
      * 
      * @param customBlock the custom block data to generate states for
      * @param blockStates the list of NBT maps to append the custom block states to
-     * @param customExtBlockStates the list of custom block states to append the custom block states to 
-     * @param stateVersion the state version to use for the custom block states
+     * @param customExtBlockStates the list of custom block states to append the custom block states to
      */
-    static void generateCustomBlockStates(CustomBlockData customBlock, List<NbtMap> blockStates, List<CustomBlockState> customExtBlockStates, int stateVersion) {
+    static void generateCustomBlockStates(CustomBlockData customBlock, List<NbtMap> blockStates, List<CustomBlockState> customExtBlockStates) {
         int totalPermutations = 1;
         for (CustomBlockProperty<?> property : customBlock.properties().values()) {
             totalPermutations *= property.values().size();
@@ -219,7 +271,6 @@ public class CustomBlockRegistryPopulator {
     
             blockStates.add(NbtMap.builder()
                     .putString("name", customBlock.identifier())
-                    .putInt("version", stateVersion)
                     .putCompound("states", states)
                     .build());
             customExtBlockStates.add(new GeyserCustomBlockState(customBlock, states));
@@ -260,7 +311,7 @@ public class CustomBlockRegistryPopulator {
     
         CreativeCategory creativeCategory = customBlock.creativeCategory() != null ? customBlock.creativeCategory() : CreativeCategory.NONE;
         String creativeGroup = customBlock.creativeGroup() != null ? customBlock.creativeGroup() : "";
-        NbtMap propertyTag = NbtMap.builder()
+        NbtMapBuilder propertyTag = NbtMap.builder()
                 .putCompound("components", CustomBlockRegistryPopulator.convertComponents(customBlock.components(), protocolVersion))
                 // this is required or the client will crash
                 // in the future, this can be used to replace items in the creative inventory
@@ -274,8 +325,11 @@ public class CustomBlockRegistryPopulator {
                 .putInt("molangVersion", 1)
                 .putList("permutations", NbtType.COMPOUND, permutations)
                 .putList("properties", NbtType.COMPOUND, properties)
-                .build();
-        return new BlockPropertyData(customBlock.identifier(), propertyTag);
+                .putCompound("vanilla_block_data", NbtMap.builder()
+                    .putInt("block_id", BLOCK_ID.getAndIncrement())
+                    .build());
+
+        return new BlockPropertyData(customBlock.identifier(), propertyTag.build());
     }
 
     /**
@@ -325,12 +379,15 @@ public class CustomBlockRegistryPopulator {
             NbtMapBuilder materialsBuilder = NbtMap.builder();
             for (Map.Entry<String, MaterialInstance> entry : components.materialInstances().entrySet()) {
                 MaterialInstance materialInstance = entry.getValue();
-                materialsBuilder.putCompound(entry.getKey(), NbtMap.builder()
-                        .putString("texture", materialInstance.texture())
+                NbtMapBuilder materialBuilder = NbtMap.builder()
                         .putString("render_method", materialInstance.renderMethod())
                         .putBoolean("face_dimming", materialInstance.faceDimming())
-                        .putBoolean("ambient_occlusion", materialInstance.faceDimming())
-                        .build());
+                        .putBoolean("ambient_occlusion", materialInstance.faceDimming());
+                // Texture can be unspecified when blocks.json is used in RP (https://wiki.bedrock.dev/blocks/blocks-stable.html#minecraft-material-instances)
+                if (materialInstance.texture() != null) {
+                    materialBuilder.putString("texture", materialInstance.texture());
+                }
+                materialsBuilder.putCompound(entry.getKey(), materialBuilder.build());
             }
 
             builder.putCompound("minecraft:material_instances", NbtMap.builder()
@@ -384,10 +441,6 @@ public class CustomBlockRegistryPopulator {
                     .putFloat("TY", components.transformation().ty())
                     .putFloat("TZ", components.transformation().tz())
                     .build());
-        }
-
-        if (components.unitCube()) {
-            builder.putCompound("minecraft:unit_cube", NbtMap.EMPTY);
         }
 
         // place_air is not an actual component
@@ -457,24 +510,23 @@ public class CustomBlockRegistryPopulator {
     }
 
     private static CustomBlockData createExtendedCollisionBlock(BoxComponent boxComponent, int extendedCollisionBlock) {
-        CustomBlockData customBlockData = new CustomBlockDataBuilder()
+        return new GeyserCustomBlockData.Builder()
                 .name("extended_collision_" + extendedCollisionBlock)
                 .components(
-                    new CustomBlockComponentsBuilder()
+                    new GeyserCustomBlockComponents.Builder()
                         .collisionBox(boxComponent)
                         .selectionBox(BoxComponent.emptyBox())
-                        .materialInstance("*", new MaterialInstanceBuilder()
+                        .materialInstance("*", new GeyserMaterialInstance.Builder()
                             .texture("glass")
                             .renderMethod("alpha_test")
                             .faceDimming(false)
                             .ambientOcclusion(false)
                             .build())
                         .lightDampening(0)
-                        .geometry(new GeometryComponentBuilder()
+                        .geometry(new GeyserGeometryComponent.Builder()
                             .identifier("geometry.invisible")
                             .build())
                         .build())
                 .build();
-        return customBlockData;
     }
 }

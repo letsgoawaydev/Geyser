@@ -25,16 +25,17 @@
 
 package org.geysermc.geyser.util;
 
-import com.github.steveice10.mc.protocol.data.game.entity.player.GameMode;
-import com.github.steveice10.mc.protocol.data.game.setting.Difficulty;
+import org.cloudburstmc.protocol.bedrock.packet.SetDifficultyPacket;
 import org.geysermc.cumulus.component.DropdownComponent;
 import org.geysermc.cumulus.form.CustomForm;
 import org.geysermc.geyser.GeyserImpl;
+import org.geysermc.geyser.Permissions;
 import org.geysermc.geyser.level.GameRule;
 import org.geysermc.geyser.level.WorldManager;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.geyser.text.GeyserLocale;
 import org.geysermc.geyser.text.MinecraftLocale;
+import org.geysermc.mcprotocollib.protocol.data.game.setting.Difficulty;
 
 public class SettingsUtils {
     /**
@@ -51,50 +52,37 @@ public class SettingsUtils {
                 .title("geyser.settings.title.main")
                 .iconPath("textures/ui/settings_glyph_color_2x.png");
 
+        // Let's store these to avoid issues
+        boolean showCoordinates = session.getPreferencesCache().isAllowShowCoordinates();
+        boolean cooldownShown = CooldownUtils.getDefaultShowCooldown() != CooldownUtils.CooldownType.DISABLED;
+        boolean customSkulls = session.getGeyser().getConfig().isAllowCustomSkulls();
+
         // Only show the client title if any of the client settings are available
-        boolean showClientSettings = session.getPreferencesCache().isAllowShowCoordinates()
-                || CooldownUtils.getDefaultShowCooldown() != CooldownUtils.CooldownType.DISABLED
-                || session.getGeyser().getConfig().isAllowCustomSkulls();
+        boolean showClientSettings = showCoordinates || cooldownShown || customSkulls;
 
         if (showClientSettings) {
             builder.label("geyser.settings.title.client");
 
             // Client can only see its coordinates if reducedDebugInfo is disabled and coordinates are enabled in geyser config.
-            if (session.getPreferencesCache().isAllowShowCoordinates()) {
+            if (showCoordinates) {
                 builder.toggle("%createWorldScreen.showCoordinates", session.getPreferencesCache().isPrefersShowCoordinates());
             }
 
-            if (CooldownUtils.getDefaultShowCooldown() != CooldownUtils.CooldownType.DISABLED) {
+            if (cooldownShown) {
                 DropdownComponent.Builder cooldownDropdown = DropdownComponent.builder("options.attackIndicator");
-                cooldownDropdown.option("options.attack.crosshair", session.getPreferencesCache().getCooldownPreference() == CooldownUtils.CooldownType.TITLE);
-                cooldownDropdown.option("options.attack.hotbar", session.getPreferencesCache().getCooldownPreference() == CooldownUtils.CooldownType.ACTIONBAR);
-                cooldownDropdown.option("options.off", session.getPreferencesCache().getCooldownPreference() == CooldownUtils.CooldownType.DISABLED);
+                CooldownUtils.CooldownType currentCooldownType = session.getPreferencesCache().getCooldownPreference();
+                cooldownDropdown.option("options.attack.crosshair", currentCooldownType == CooldownUtils.CooldownType.TITLE);
+                cooldownDropdown.option("options.attack.hotbar", currentCooldownType == CooldownUtils.CooldownType.ACTIONBAR);
+                cooldownDropdown.option("options.off", currentCooldownType == CooldownUtils.CooldownType.DISABLED);
                 builder.dropdown(cooldownDropdown);
             }
 
-            if (session.getGeyser().getConfig().isAllowCustomSkulls()) {
+            if (customSkulls) {
                 builder.toggle("geyser.settings.option.customSkulls", session.getPreferencesCache().isPrefersCustomSkulls());
             }
         }
 
-        boolean canModifyServer = session.getOpPermissionLevel() >= 2 || session.hasPermission("geyser.settings.server");
-        if (canModifyServer) {
-            builder.label("geyser.settings.title.server");
-
-            DropdownComponent.Builder gamemodeDropdown = DropdownComponent.builder("%createWorldScreen.gameMode.personal");
-            for (GameMode gamemode : GameMode.values()) {
-                gamemodeDropdown.option("selectWorld.gameMode." + gamemode.name().toLowerCase(), session.getGameMode() == gamemode);
-            }
-            builder.dropdown(gamemodeDropdown);
-
-            DropdownComponent.Builder difficultyDropdown = DropdownComponent.builder("%options.difficulty");
-            for (Difficulty difficulty : Difficulty.values()) {
-                difficultyDropdown.option("%options.difficulty." + difficulty.name().toLowerCase(), session.getWorldCache().getDifficulty() == difficulty);
-            }
-            builder.dropdown(difficultyDropdown);
-        }
-
-        boolean showGamerules = session.getOpPermissionLevel() >= 2 || session.hasPermission("geyser.settings.gamerules");
+        boolean showGamerules = session.getOpPermissionLevel() >= 2 || session.hasPermission(Permissions.SETTINGS_GAMERULES);
         if (showGamerules) {
             builder.label("geyser.settings.title.game_rules")
                     .translator(MinecraftLocale::getLocaleString); // we need translate gamerules next
@@ -111,32 +99,25 @@ public class SettingsUtils {
         }
 
         builder.validResultHandler((response) -> {
+            applyDifficultyFix(session);
             if (showClientSettings) {
                 // Client can only see its coordinates if reducedDebugInfo is disabled and coordinates are enabled in geyser config.
-                if (session.getPreferencesCache().isAllowShowCoordinates()) {
-                    session.getPreferencesCache().setPrefersShowCoordinates(response.next());
-                    session.getPreferencesCache().updateShowCoordinates();
+                if (showCoordinates) {
+                    // In theory, a server could update the gamerule while the client is in the settings menu.
+                    // We need to still read the response to update the client's preference, but we don't want to update the gamerule.
+                    if (session.getPreferencesCache().isAllowShowCoordinates()) {
+                        session.getPreferencesCache().setPrefersShowCoordinates(response.next());
+                        session.getPreferencesCache().updateShowCoordinates();
+                    }
                 }
 
-                if (CooldownUtils.getDefaultShowCooldown() != CooldownUtils.CooldownType.DISABLED) {
+                if (cooldownShown) {
                     CooldownUtils.CooldownType cooldownType = CooldownUtils.CooldownType.VALUES[(int) response.next()];
                     session.getPreferencesCache().setCooldownPreference(cooldownType);
                 }
 
-                if (session.getGeyser().getConfig().isAllowCustomSkulls()) {
+                if (customSkulls) {
                     session.getPreferencesCache().setPrefersCustomSkulls(response.next());
-                }
-            }
-
-            if (canModifyServer) {
-                GameMode gameMode = GameMode.values()[(int) response.next()];
-                if (gameMode != null && gameMode != session.getGameMode()) {
-                    session.getGeyser().getWorldManager().setPlayerGameMode(session, gameMode);
-                }
-
-                Difficulty difficulty = Difficulty.values()[(int) response.next()];
-                if (difficulty != null && difficulty != session.getWorldCache().getDifficulty()) {
-                    session.getGeyser().getWorldManager().setDifficulty(session, difficulty);
                 }
             }
 
@@ -157,7 +138,19 @@ public class SettingsUtils {
             }
         });
 
+        builder.closedOrInvalidResultHandler($ -> applyDifficultyFix(session));
+
         return builder.build();
+    }
+
+    private static void applyDifficultyFix(GeyserSession session) {
+        // Peaceful difficulty allows always eating food - hence, we just do not send it to Bedrock.
+        // Since we sent the real difficulty before opening the server settings form, let's restore it to our workaround here
+        if (session.getWorldCache().getDifficulty() == Difficulty.PEACEFUL) {
+            SetDifficultyPacket setDifficultyPacket = new SetDifficultyPacket();
+            setDifficultyPacket.setDifficulty(Difficulty.EASY.ordinal());
+            session.sendUpstreamPacket(setDifficultyPacket);
+        }
     }
 
     private static String translateEntry(String key, String locale) {
