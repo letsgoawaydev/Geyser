@@ -25,7 +25,16 @@
 
 package org.geysermc.geyser.entity.type;
 
+import lombok.Setter;
+import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
+import org.cloudburstmc.protocol.bedrock.data.entity.EntityEventType;
+import org.cloudburstmc.protocol.bedrock.packet.MotionPredictionHintsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.MoveEntityDeltaPacket;
+import org.geysermc.geyser.GeyserImpl;
+import org.geysermc.geyser.level.block.BlockStateValues;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.type.BooleanEntityMetadata;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.type.ByteEntityMetadata;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.metadata.type.IntEntityMetadata;
 import org.geysermc.mcprotocollib.protocol.data.game.entity.type.EntityType;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
@@ -33,16 +42,27 @@ import org.geysermc.geyser.entity.EntityDefinition;
 import org.geysermc.geyser.session.GeyserSession;
 
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
-public class AbstractArrowEntity extends Entity {
+public class AbstractArrowEntity extends Entity implements Tickable {
+    private boolean inGround = false;
 
     public AbstractArrowEntity(GeyserSession session, int entityId, long geyserId, UUID uuid, EntityDefinition<?> definition, Vector3f position, Vector3f motion, float yaw, float pitch, float headYaw) {
         super(session, entityId, geyserId, uuid, definition, position, motion, yaw, pitch, headYaw);
 
         // Set the correct texture if using the resource pack
         setFlag(EntityFlag.BRIBED, definition.entityType() == EntityType.SPECTRAL_ARROW);
-
         setMotion(motion);
+    }
+
+    public void setInGround(BooleanEntityMetadata entityMetadata) {
+        inGround = entityMetadata.getPrimitiveValue();
+
+        if (inGround) {
+            playEntityEvent(EntityEventType.ARROW_SHAKE, 7);
+            setMotion(Vector3f.ZERO);
+        }
+        // GeyserImpl.getInstance().getLogger().debug("In Ground? " + entityMetadata.getPrimitiveValue());
     }
 
     public void setArrowFlags(ByteEntityMetadata entityMetadata) {
@@ -68,10 +88,67 @@ public class AbstractArrowEntity extends Entity {
     @Override
     public void setMotion(Vector3f motion) {
         super.setMotion(motion);
+        MotionPredictionHintsPacket motionPacket = new MotionPredictionHintsPacket();
+        motionPacket.setMotion(motion);
+        motionPacket.setRuntimeEntityId(getGeyserId());
+        motionPacket.setOnGround(inGround);
+        session.sendUpstreamPacket(motionPacket);
+    }
 
-        double horizontalSpeed = Math.sqrt(motion.getX() * motion.getX() + motion.getZ() * motion.getZ());
-        setYaw((float) Math.toDegrees(Math.atan2(motion.getX(), motion.getZ())));
-        setPitch((float) Math.toDegrees(Math.atan2(motion.getY(), horizontalSpeed)));
-        setHeadYaw(getYaw());
+    @Override
+    public void moveRelative(double relX, double relY, double relZ, float yaw, float pitch, boolean isOnGround) {
+        motion = motion.add(relX, relY, relZ);
+    }
+
+    @Override
+    public void moveRelative(double relX, double relY, double relZ, float yaw, float pitch, float headYaw, boolean isOnGround) {
+        motion = motion.add(relX, relY, relZ);
+    }
+
+    @Override
+    public void tick() {
+
+        if (!inGround) {
+            double horizontalSpeed = Math.sqrt(motion.getX() * motion.getX() + motion.getZ() * motion.getZ());
+            yaw = ((float) Math.toDegrees(Math.atan2(motion.getX(), motion.getZ())));
+            pitch = ((float) Math.toDegrees(Math.atan2(motion.getY(), horizontalSpeed)));
+            headYaw = yaw;
+
+            moveAbsolute(position.add(motion), yaw, pitch, headYaw, inGround, false);
+
+            float drag = getDrag();
+            float gravity = getGravity();
+            motion = motion.mul(drag).down(gravity);
+        } else {
+            moveAbsolute(position.sub(motion), yaw, pitch, headYaw, inGround, false);
+        }
+    }
+
+
+    private float getGravity() {
+        if (getFlag(EntityFlag.HAS_GRAVITY) && !inGround) {
+            // Gravity can change if the item is in water/lava, but
+            // the server calculates the motion & position for us
+            return 0.05f;
+        }
+        return 0.0f;
+    }
+
+    /**
+     * @return true if this entity is currently in water.
+     */
+    private boolean isInWater() {
+        int block = session.getGeyser().getWorldManager().getBlockAt(session, position.toInt());
+        return BlockStateValues.getWaterLevel(block) != -1;
+    }
+
+    private float getDrag() {
+        if (inGround) {
+            return 0.0f;
+        }
+        if (isInWater()) {
+            return 0.6f;
+        }
+        return 0.99f;
     }
 }
