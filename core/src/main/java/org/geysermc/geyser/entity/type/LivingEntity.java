@@ -74,7 +74,7 @@ import java.util.UUID;
 
 @Getter
 @Setter
-public class LivingEntity extends Entity {
+public class LivingEntity extends Entity implements Tickable {
     protected ItemData helmet = ItemData.AIR;
     protected ItemData chestplate = ItemData.AIR;
     protected ItemData leggings = ItemData.AIR;
@@ -105,6 +105,13 @@ public class LivingEntity extends Entity {
     @Getter(AccessLevel.NONE)
     @Setter(AccessLevel.NONE)
     private float attributeScale;
+    private float nextHeadYaw;
+    private float nextYaw;
+    private float nextPitch;
+    private double nextMoveX;
+    private double nextMoveY;
+    private double nextMoveZ;
+    private boolean nextOnGround;
 
     public LivingEntity(GeyserSession session, int entityId, long geyserId, UUID uuid, EntityDefinition<?> definition, Vector3f position, Vector3f motion, float yaw, float pitch, float headYaw) {
         super(session, entityId, geyserId, uuid, definition, position, motion, yaw, pitch, headYaw);
@@ -464,16 +471,21 @@ public class LivingEntity extends Entity {
                         clientVehicle.getVehicleComponent().setStepHeight((float) AttributeUtils.calculateValue(javaAttribute));
                     }
                 }
-                case GRAVITY ->  {
+                case GRAVITY -> {
                     if (this instanceof ClientVehicle clientVehicle) {
                         clientVehicle.getVehicleComponent().setGravity(AttributeUtils.calculateValue(javaAttribute));
                     }
                 }
-                case ATTACK_DAMAGE -> newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.ATTACK_DAMAGE));
-                case FLYING_SPEED -> newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.FLYING_SPEED));
-                case FOLLOW_RANGE -> newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.FOLLOW_RANGE));
-                case KNOCKBACK_RESISTANCE -> newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.KNOCKBACK_RESISTANCE));
-                case JUMP_STRENGTH -> newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.HORSE_JUMP_STRENGTH));
+                case ATTACK_DAMAGE ->
+                        newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.ATTACK_DAMAGE));
+                case FLYING_SPEED ->
+                        newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.FLYING_SPEED));
+                case FOLLOW_RANGE ->
+                        newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.FOLLOW_RANGE));
+                case KNOCKBACK_RESISTANCE ->
+                        newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.KNOCKBACK_RESISTANCE));
+                case JUMP_STRENGTH ->
+                        newAttributes.add(calculateAttribute(javaAttribute, GeyserAttributeType.HORSE_JUMP_STRENGTH));
                 case SCALE -> {
                     // Attribute on Java, entity data on Bedrock
                     setAttributeScale((float) AttributeUtils.calculateValue(javaAttribute));
@@ -488,5 +500,65 @@ public class LivingEntity extends Entity {
      */
     protected AttributeData calculateAttribute(Attribute javaAttribute, GeyserAttributeType type) {
         return type.getAttribute((float) AttributeUtils.calculateValue(javaAttribute));
+    }
+
+    @Override
+    public void updateHeadLookRotation(float headYaw) {
+        nextHeadYaw = headYaw;
+        //moveRelative(0, 0, 0, getYaw(), getPitch(), headYaw, isOnGround());
+    }
+
+    /**
+     * Updates an entity's position and rotation. Used in JavaMoveEntityPosRotTranslator.
+     *
+     * @param moveX The new X offset of the current position.
+     * @param moveY The new Y offset of the current position.
+     * @param moveZ The new Z offset of the current position.
+     * @param yaw The new yaw of the entity.
+     * @param pitch The new pitch of the entity.
+     * @param isOnGround Whether the entity is currently on the ground.
+     */
+    @Override
+    public void updatePositionAndRotation(double moveX, double moveY, double moveZ, float yaw, float pitch, boolean isOnGround) {
+        nextMoveX = moveX;
+        nextMoveY = moveY;
+        nextMoveZ = moveZ;
+        nextYaw = yaw;
+        nextPitch = pitch;
+        nextOnGround = isOnGround;
+    }
+
+    /**
+     * Updates an entity's rotation. Used in JavaMoveEntityRotTranslator.
+     *
+     * @param yaw The new yaw of the entity.
+     * @param pitch The new pitch of the entity.
+     * @param isOnGround Whether the entity is currently on the ground.
+     */
+    @Override
+    public void updateRotation(float yaw, float pitch, boolean isOnGround) {
+        nextYaw = yaw;
+        nextPitch = pitch;
+        nextOnGround = isOnGround;
+    }
+
+    @Override
+    public void drawTick() {
+        nextYaw = nextYaw == -1 ? this.yaw : nextYaw;
+        nextPitch = nextPitch == -1 ? this.pitch : nextPitch;
+        nextHeadYaw = nextHeadYaw == -1 ? this.headYaw : nextHeadYaw;
+
+        moveRelative(nextMoveX, nextMoveY, nextMoveZ, nextYaw, nextPitch, nextHeadYaw, nextOnGround);
+        nextMoveX = 0;
+        nextMoveY = 0;
+        nextMoveZ = 0;
+        nextYaw = -1;
+        nextPitch = -1;
+        nextHeadYaw = -1;
+    }
+
+    @Override
+    public void tick() {
+
     }
 }

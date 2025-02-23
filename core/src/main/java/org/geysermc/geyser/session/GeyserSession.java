@@ -1121,7 +1121,7 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         millisecondsPerTick = 1000.0f / tickRate;
 
         nanosecondsPerTick = MathUtils.ceil(1000000000.0f / tickRate);
-        tickThread = tickEventLoop.scheduleAtFixedRate(this::tick, nanosecondsPerTick, nanosecondsPerTick, TimeUnit.NANOSECONDS);
+        tickThread = tickEventLoop.scheduleAtFixedRate(this::tick, 0, nanosecondsPerTick, TimeUnit.NANOSECONDS);
     }
 
     private void executeRunnable(Runnable runnable) {
