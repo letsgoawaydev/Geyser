@@ -88,16 +88,18 @@ import java.util.concurrent.TimeUnit;
 
 public class UpstreamPacketHandler extends LoggingPacketHandler {
 
-    private boolean networkSettingsRequested = false;
-    private final Deque<String> packsToSend = new ArrayDeque<>();
-    private final CompressionStrategy compressionStrategy;
-
     // Avoid overloading consoles when downloading larger resource packs
     private static final int PACKET_SEND_DELAY = 4 * 50;
+    private static final UUID GEYSER_OPTIONAL_PACK_UUID = UUID.fromString("e5f5c938-a701-11eb-b2a3-047d7bb283ba");
+    private final Deque<String> packsToSend = new ArrayDeque<>();
+    private final CompressionStrategy compressionStrategy;
     private final Queue<ResourcePackChunkRequestPacket> chunkRequestQueue = new ConcurrentLinkedQueue<>();
+    private boolean networkSettingsRequested = false;
     private boolean currentlySendingChunks = false;
-
     private SessionLoadResourcePacksEventImpl resourcePackLoadEvent;
+    private boolean optionalPackLoaded = false;
+    private boolean sendPacksRequested = false;
+    private boolean haveAllPacksRequested = false;
 
     public UpstreamPacketHandler(GeyserImpl geyser, GeyserSession session) {
         super(geyser, session);
@@ -214,11 +216,13 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
 
         this.resourcePackLoadEvent = new SessionLoadResourcePacksEventImpl(session);
         this.geyser.eventBus().fire(this.resourcePackLoadEvent);
+        if (this.resourcePackLoadEvent.getPacks().containsKey(GEYSER_OPTIONAL_PACK_UUID)) {
+            this.optionalPackLoaded = true;
+        }
 
         ResourcePacksInfoPacket resourcePacksInfo = new ResourcePacksInfoPacket();
         resourcePacksInfo.getResourcePackInfos().addAll(this.resourcePackLoadEvent.infoPacketEntries());
         resourcePacksInfo.setVibrantVisualsForceDisabled(!session.isAllowVibrantVisuals());
-
         resourcePacksInfo.setForcedToAccept(GeyserImpl.getInstance().getConfig().isForceResourcePacks());
         resourcePacksInfo.setWorldTemplateId(UUID.randomUUID());
         resourcePacksInfo.setWorldTemplateVersion("*");
@@ -230,8 +234,17 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
 
     @Override
     public PacketSignal handle(ResourcePackClientResponsePacket packet) {
+        geyser.getLogger().info("Packet " + packet.getStatus());
+
         switch (packet.getStatus()) {
             case COMPLETED -> {
+                if (!sendPacksRequested && haveAllPacksRequested && GeyserImpl.getInstance().getConfig().isForceResourcePacks()) {
+                    session.setRequestedPacks(true);
+                }
+                if (session.isRequestedPacks()) {
+                    session.setOptionalPackLoaded(this.optionalPackLoaded);
+                }
+                geyser.getLogger().info("Geyser Optional Pack loaded: " + (session.isOptionalPackLoaded() ? "Yes" : "No"));
                 if (geyser.getConfig().getRemote().authType() != AuthType.ONLINE) {
                     session.authenticate(session.getAuthData().name());
                 } else if (!couldLoginUserByName(session.getAuthData().name())) {
@@ -241,15 +254,19 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
                 geyser.getLogger().info(GeyserLocale.getLocaleStringLog("geyser.network.connect", session.getAuthData().name()));
             }
             case SEND_PACKS -> {
+                sendPacksRequested = true;
+                session.setRequestedPacks(true);
                 packsToSend.addAll(packet.getPackIds());
                 sendPackDataInfo(packsToSend.pop());
             }
             case HAVE_ALL_PACKS -> {
+                haveAllPacksRequested = true;
                 ResourcePackStackPacket stackPacket = new ResourcePackStackPacket();
                 stackPacket.setExperimentsPreviouslyToggled(false);
                 stackPacket.setForcedToAccept(false); // Leaving this as false allows the player to choose to download or not
                 stackPacket.setGameVersion(session.getClientData().getGameVersion());
                 stackPacket.getResourcePacks().addAll(this.resourcePackLoadEvent.orderedPacks());
+
                 // Allows Vibrant Visuals to be toggled in the settings
                 if (session.isAllowVibrantVisuals() && !GameProtocol.is1_21_90orHigher(session)) {
                     stackPacket.getExperiments().add(new ExperimentData("experimental_graphics", true));
@@ -313,6 +330,7 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
 
     @Override
     public PacketSignal handle(ResourcePackChunkRequestPacket packet) {
+        session.setRequestedPacks(true);
         // Resolve some console pack downloading issues.
         // See <https://github.com/PowerNukkitX/PowerNukkitX/pull/1997> for reference
         chunkRequestQueue.add(packet);
@@ -338,7 +356,7 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
 
         if (holder == null) {
             GeyserImpl.getInstance().getLogger().debug("Client {0} tried to request pack id {1} not sent to it!",
-                session.bedrockUsername(), packet.getPackId());
+                    session.bedrockUsername(), packet.getPackId());
             currentlySendingChunks = false;
             session.disconnect("disconnectionScreen.resourcePack");
             return;
@@ -399,7 +417,7 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
 
         if (packID.length < 2) {
             GeyserImpl.getInstance().getLogger().debug("Client {0} tried to request invalid pack id {1}!",
-                session.bedrockUsername(), packID);
+                    session.bedrockUsername(), packID);
             session.disconnect("disconnectionScreen.resourcePack");
             return;
         }
@@ -409,7 +427,7 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
             packId = UUID.fromString(packID[0]);
         } catch (IllegalArgumentException e) {
             GeyserImpl.getInstance().getLogger().debug("Client {0} tried to request pack with an invalid id {1})",
-                session.bedrockUsername(), id);
+                    session.bedrockUsername(), id);
             session.disconnect("disconnectionScreen.resourcePack");
             return;
         }
@@ -417,7 +435,7 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
         ResourcePackHolder holder = this.resourcePackLoadEvent.getPacks().get(packId);
         if (holder == null) {
             GeyserImpl.getInstance().getLogger().debug("Client {0} tried to request pack id {1} not sent to it!",
-                session.bedrockUsername(), id);
+                    session.bedrockUsername(), id);
             session.disconnect("disconnectionScreen.resourcePack");
             return;
         }
@@ -425,7 +443,9 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
         ResourcePack pack = holder.pack();
         PackCodec codec = pack.codec();
         ResourcePackManifest.Header header = pack.manifest().header();
-
+        if (header.uuid().equals(GEYSER_OPTIONAL_PACK_UUID)) {
+            this.optionalPackLoaded = true;
+        }
         data.setPackId(header.uuid());
         int chunkCount = (int) Math.ceil(codec.size() / (double) GeyserResourcePack.CHUNK_SIZE);
         data.setChunkCount(chunkCount);

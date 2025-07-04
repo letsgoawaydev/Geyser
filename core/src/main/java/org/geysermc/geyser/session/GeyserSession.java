@@ -244,7 +244,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Getter
 public class GeyserSession implements GeyserConnection, GeyserCommandSource {
-
     private static final Gson GSON = new Gson();
 
     private final GeyserImpl geyser;
@@ -725,6 +724,10 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     @Setter
     private boolean allowVibrantVisuals = true;
 
+    @Setter
+    private boolean requestedPacks = false;
+    @Setter
+    private boolean optionalPackLoaded = false;
     public GeyserSession(GeyserImpl geyser, BedrockServerSession bedrockServerSession, EventLoop tickEventLoop) {
         this.geyser = geyser;
         this.upstream = new UpstreamSession(bedrockServerSession);
